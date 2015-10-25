@@ -8,6 +8,7 @@
 #ifdef SQLITE_MODERN_CPP_WITH_BOOST
 #   include <boost/optional.hpp>
 #   include <boost/uuid/uuid.hpp>
+#   include <boost/uuid/uuid_serialize.hpp>
 #endif
 
 #include "sqlite3.h"
@@ -19,6 +20,7 @@ namespace sqlite {
 struct sqlite_exception: public std::runtime_error {
 	sqlite_exception(const char* msg):runtime_error(msg) {}
 };
+
 
 class database;
 template<std::size_t> class binder;
@@ -101,7 +103,7 @@ protected:
 		database_binder(db, std::u16string(sql.begin(), sql.end())) { }
 
 public:
-	friend class database;
+    friend class database;
 
 	~database_binder() {
 		throw_exceptions = false;
@@ -194,7 +196,15 @@ public:
 		++_inx;
 		return *this;
 	}
+	database_binder& operator <<(const bool& val) {
+        if (sqlite3_bind_int(_stmt, _inx, val ? 1 : 0) != SQLITE_OK) {
+            throw_sqlite_error();
+        }
 
+        ++_inx;
+        return *this;
+    }
+	
 #ifdef SQLITE_MODERN_CPP_WITH_BOOST
 	template <typename BoostOptionalT>
 	database_binder& operator <<(const boost::optional<BoostOptionalT>& val) {
@@ -269,6 +279,13 @@ public:
             t = 0;
         } else {
             t = sqlite3_column_int64(_stmt, inx);
+        }
+    }
+    void get_col_from_db(int inx, bool& t) {
+        if (sqlite3_column_type(_stmt, inx) == SQLITE_NULL) {
+            t = false;
+        } else {
+            t = sqlite3_column_int(_stmt, inx) != 0;
         }
     }
 #ifdef SQLITE_MODERN_CPP_WITH_BOOST
@@ -406,5 +423,15 @@ public:
 		function(std::move(values)...);
 	}
 };
+
+template <typename T>
+boost::optional<T>
+bind_if(const T& val, bool enable) {
+    if (enable) {
+        return boost::optional<T>(val);
+    }
+    return boost::optional<T>();
+}
+
 
 }
